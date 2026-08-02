@@ -1,4 +1,23 @@
+import json
+import os
+import flet as ft
 
+# --- CONSTANTES & RANKS ---
+RANKS = [
+    {"name": "Bronze", "color": "#CD7F32", "ratio": 0.0},
+    {"name": "Silver", "color": "#C0C0C0", "ratio": 0.8},
+    {"name": "Gold", "color": "#FFD700", "ratio": 1.1},
+    {"name": "Platinum", "color": "#00ECEC", "ratio": 1.4},
+    {"name": "Diamond", "color": "#B9F2FF", "ratio": 1.7},
+    {"name": "Master", "color": "#A020F0", "ratio": 2.0},
+    {"name": "GODLIKE ⚡", "color": "#FF003C", "ratio": 2.3}  # Rang 7 : Ultra Dur
+]
+
+MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps"]
+DB_FILE = "gym_rpg_data.json"
+
+def get_default_data():
+    return {
         "user_info": {"weight": 75.0, "height": 175.0},
         "muscles": {m: {"xp": 0, "best_1rm": 0.0} for m in MUSCLES},
         "history": []
@@ -7,21 +26,22 @@
 def load_data():
     if not os.path.exists(DB_FILE):
         return get_default_data()
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return get_default_data()
 
 def save_data(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
 def calculate_1rm(weight, reps):
-    """Formule d'Epley pour estimer le 1RM"""
     if reps == 1:
         return weight
     return weight * (1 + reps / 30.0)
 
 def get_rank_info(ratio):
-    """Détermine le rang selon le ratio force/poids corporel"""
     current_rank = RANKS[0]
     for r in RANKS:
         if ratio >= r["ratio"]:
@@ -30,208 +50,152 @@ def get_rank_info(ratio):
             break
     return current_rank
 
-# --- APPLICATION GRAPHIQUE ---
-class GymRPGApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
+def main(page: ft.Page):
+    page.title = "Gym RPG Ranker"
+    page.theme_mode = ft.ThemeMode.DARK
+    page.scroll = ft.ScrollMode.AUTO
+    page.padding = 15
 
-        self.title("Gym RPG - Evolution & Ranks")
-        self.geometry("850x650")
-        self.resizable(False, False)
+    data = load_data()
 
-        self.data = load_data()
+    # Dynamic Components
+    muscle_list_view = ft.Column(spacing=10)
+    feedback_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD)
 
-        # Layout Principal
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+    # Form Fields
+    weight_input = ft.TextField(label="Poids (kg)", value=str(data["user_info"]["weight"]), width=110)
+    height_input = ft.TextField(label="Taille (cm)", value=str(data["user_info"]["height"]), width=110)
 
-        # Panneau Latéral (Profil & Rangs Musculaires)
-        self.sidebar_frame = ctk.CTkFrame(self, width=280, corner_radius=12)
-        self.sidebar_frame.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
-        self.build_sidebar()
+    muscle_dropdown = ft.Dropdown(
+        label="Muscle ciblé",
+        options=[ft.dropdown.Option(m) for m in MUSCLES],
+        value=MUSCLES[0]
+    )
+    exercise_input = ft.TextField(label="Nom de l'exercice", hint_text="ex: Développé Couché")
+    sets_input = ft.TextField(label="Sets", keyboard_type=ft.KeyboardType.NUMBER, width=90)
+    reps_input = ft.TextField(label="Reps", keyboard_type=ft.KeyboardType.NUMBER, width=90)
+    load_input = ft.TextField(label="Poids (kg)", keyboard_type=ft.KeyboardType.NUMBER, width=100)
 
-        # Panneau Principal (Enregistrement Workout & Historique)
-        self.main_frame = ctk.CTkFrame(self, corner_radius=12)
-        self.main_frame.grid(row=0, column=1, padx=(0, 15), pady=15, sticky="nsew")
-        self.build_main_panel()
+    def refresh_muscles():
+        muscle_list_view.controls.clear()
+        u_weight = float(data["user_info"]["weight"]) if data["user_info"]["weight"] > 0 else 75.0
 
-    def build_sidebar(self):
-        # Profil Utilisateur
-        title = ctk.CTkLabel(self.sidebar_frame, text="👤 PROFIL ATHLÈTE", font=ctk.CTkFont(size=18, weight="bold"))
-        title.pack(pady=(15, 10))
-
-        # Entrées Poids/Taille
-        info_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        info_frame.pack(fill="x", padx=10, pady=5)
-
-        ctk.CTkLabel(info_frame, text="Poids (kg):").grid(row=0, column=0, padx=5, pady=2, sticky="w")
-        self.weight_entry = ctk.CTkEntry(info_frame, width=70)
-        self.weight_entry.insert(0, str(self.data["user_info"]["weight"]))
-        self.weight_entry.grid(row=0, column=1, padx=5, pady=2)
-
-        ctk.CTkLabel(info_frame, text="Taille (cm):").grid(row=1, column=0, padx=5, pady=2, sticky="w")
-        self.height_entry = ctk.CTkEntry(info_frame, width=70)
-        self.height_entry.insert(0, str(self.data["user_info"]["height"]))
-        self.height_entry.grid(row=1, column=1, padx=5, pady=2)
-
-        save_btn = ctk.CTkButton(self.sidebar_frame, text="Mettre à jour le profil", command=self.update_profile, height=25)
-        save_btn.pack(pady=8)
-
-        # Niveaux Musculaires
-        ctk.CTkLabel(self.sidebar_frame, text="💪 NIVEAUX PAR MUSCLE", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(15, 10))
-
-        self.muscle_labels = {}
-        self.refresh_muscle_display()
-
-    def refresh_muscle_display(self):
-        # Effacer l'existant s'il y a un conteneur
-        if hasattr(self, 'muscle_container'):
-            self.muscle_container.destroy()
-
-        self.muscle_container = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.muscle_container.pack(fill="both", expand=True, padx=10, pady=5)
-
-        user_weight = float(self.data["user_info"]["weight"])
-
-        for muscle in MUSCLES:
-            m_data = self.data["muscles"][muscle]
+        for m in MUSCLES:
+            m_data = data["muscles"][m]
             best_1rm = m_data["best_1rm"]
-            ratio = (best_1rm / user_weight) if user_weight > 0 else 0
+            ratio = best_1rm / u_weight
             rank = get_rank_info(ratio)
 
-            card = ctk.CTkFrame(self.muscle_container, corner_radius=8)
-            card.pack(fill="x", pady=4)
-
-            # Muscle + XP
-            lbl_title = ctk.CTkLabel(card, text=f"{muscle}", font=ctk.CTkFont(weight="bold"))
-            lbl_title.pack(anchor="w", padx=10, pady=(2, 0))
-
-            # Tag de Rang avec Couleur
-            rank_tag = ctk.CTkLabel(
-                card, 
-                text=f"{rank['name']} (1RM: {best_1rm:.1f}kg | {m_data['xp']} XP)", 
-                text_color=rank["color"],
-                font=ctk.CTkFont(size=12, weight="bold")
+            card = ft.Card(
+                content=ft.Container(
+                    padding=12,
+                    content=ft.Column([
+                        ft.Text(m, size=16, weight=ft.FontWeight.BOLD),
+                        ft.Text(
+                            f"Rang : {rank['name']} (1RM: {best_1rm:.1f} kg | XP: {m_data['xp']})",
+                            color=rank["color"],
+                            weight=ft.FontWeight.BOLD
+                        )
+                    ])
+                )
             )
-            rank_tag.pack(anchor="w", padx=10, pady=(0, 4))
+            muscle_list_view.controls.append(card)
+        page.update()
 
-    def build_main_panel(self):
-        ctk.CTkLabel(self.main_frame, text="🏋️ ENREGISTRER UN WORKOUT", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=15)
-
-        form_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        form_frame.pack(fill="x", padx=20, pady=10)
-
-        # Sélection Muscle
-        ctk.CTkLabel(form_frame, text="Groupe Musculaire:").grid(row=0, column=0, padx=10, pady=8, sticky="w")
-        self.muscle_option = ctk.CTkOptionMenu(form_frame, values=MUSCLES)
-        self.muscle_option.grid(row=0, column=1, padx=10, pady=8)
-
-        # Exercice Name
-        ctk.CTkLabel(form_frame, text="Nom de l'Exercice:").grid(row=1, column=0, padx=10, pady=8, sticky="w")
-        self.exercise_entry = ctk.CTkEntry(form_frame, placeholder_text="ex: Développé Couché", width=200)
-        self.exercise_entry.grid(row=1, column=1, padx=10, pady=8)
-
-        # Sets / Reps / Weight
-        ctk.CTkLabel(form_frame, text="Nombre de Sets:").grid(row=2, column=0, padx=10, pady=8, sticky="w")
-        self.sets_entry = ctk.CTkEntry(form_frame, width=100)
-        self.sets_entry.grid(row=2, column=1, padx=10, pady=8, sticky="w")
-
-        ctk.CTkLabel(form_frame, text="Répétitions par Set:").grid(row=3, column=0, padx=10, pady=8, sticky="w")
-        self.reps_entry = ctk.CTkEntry(form_frame, width=100)
-        self.reps_entry.grid(row=3, column=1, padx=10, pady=8, sticky="w")
-
-        ctk.CTkLabel(form_frame, text="Charge Utilisée (kg):").grid(row=4, column=0, padx=10, pady=8, sticky="w")
-        self.weight_used_entry = ctk.CTkEntry(form_frame, width=100)
-        self.weight_used_entry.grid(row=4, column=1, padx=10, pady=8, sticky="w")
-
-        # Bouton Validation
-        log_btn = ctk.CTkButton(self.main_frame, text="Valider la Séance 🔥", command=self.log_workout, fg_color="#1f538d", height=40)
-        log_btn.pack(pady=15)
-
-        # Zone d'Alerte / Feedback
-        self.feedback_label = ctk.CTkLabel(self.main_frame, text="", font=ctk.CTkFont(size=14, weight="bold"))
-        self.feedback_label.pack(pady=5)
-
-    def update_profile(self):
+    def update_profile(e):
         try:
-            w = float(self.weight_entry.get())
-            h = float(self.height_entry.get())
-            self.data["user_info"]["weight"] = w
-            self.data["user_info"]["height"] = h
-            save_data(self.data)
-            self.refresh_muscle_display()
-            messagebox.showinfo("Succès", "Profil mis à jour avec succès!")
+            data["user_info"]["weight"] = float(weight_input.value)
+            data["user_info"]["height"] = float(height_input.value)
+            save_data(data)
+            refresh_muscles()
+            feedback_text.value = "✅ Profil mis à jour !"
+            feedback_text.color = ft.Colors.GREEN
         except ValueError:
-            messagebox.showerror("Erreur", "Poids et taille doivent être des nombres.")
+            feedback_text.value = "⚠️ Entrez des valeurs valides pour le poids/taille."
+            feedback_text.color = ft.Colors.RED
+        page.update()
 
-    def log_workout(self):
+    def log_workout(e):
         try:
-            muscle = self.muscle_option.get()
-            exercise = self.exercise_entry.get().strip()
-            sets = int(self.sets_entry.get())
-            reps = int(self.reps_entry.get())
-            weight = float(self.weight_used_entry.get())
+            m = muscle_dropdown.value
+            ex = exercise_input.value.strip() if exercise_input.value else ""
+            sets = int(sets_input.value)
+            reps = int(reps_input.value)
+            weight = float(load_input.value)
 
-            if not exercise:
-                messagebox.showwarning("Attention", "Veuillez entrer un nom d'exercice.")
+            if not ex:
+                feedback_text.value = "⚠️ Merci de spécifier le nom de l'exercice."
+                feedback_text.color = ft.Colors.RED
+                page.update()
                 return
 
-            # Calcul du 1RM actuel de la séance
             current_1rm = calculate_1rm(weight, reps)
-            
-            # Recherche du meilleur 1RM précédent pour cet exercice dans l'historique
+
+            # Recherche du 1RM précédent pour vérifier la surcharge
             previous_best_1rm = 0.0
-            for log in self.data["history"]:
-                if log["muscle"] == muscle and log["exercise"].lower() == exercise.lower():
+            for log in data["history"]:
+                if log["muscle"] == m and log["exercise"].lower() == ex.lower():
                     if log["est_1rm"] > previous_best_1rm:
                         previous_best_1rm = log["est_1rm"]
 
-            # --- RÈGLE SURCHARGE PROGRESSIVE ---
-            xp_gained = 0
             if previous_best_1rm == 0:
-                # Premier enregistrement de cet exercice
-                xp_gained = int(current_1rm * sets)
-                msg = f"🎉 Nouvel exercice débloqué ! +{xp_gained} XP sur {muscle}."
+                xp = int(current_1rm * sets)
+                msg = f"🎉 Nouvel exercice complété ! +{xp} XP sur {m}."
+                color = ft.Colors.GREEN
             elif current_1rm > previous_best_1rm:
-                # Progression confirmée !
                 diff = current_1rm - previous_best_1rm
-                xp_gained = int(diff * 10 + (sets * reps))
-                msg = f"🔥 SURCHARGE PROGRESSIVE ! Nouveau PR ! +{xp_gained} XP sur {muscle}."
+                xp = int(diff * 10 + (sets * reps))
+                msg = f"🔥 SURCHARGE PROGRESSIVE ! +{xp} XP sur {m}."
+                color = ft.Colors.GREEN
             else:
-                # Pas de progression en charge ou en reps
-                xp_gained = 0
-                msg = f"⚠️ Pas de progression détectée (1RM: {current_1rm:.1f}kg <= Précédent: {previous_best_1rm:.1f}kg). +0 XP."
+                xp = 0
+                msg = f"⚠️ Pas de progression (1RM: {current_1rm:.1f}kg <= Record: {previous_best_1rm:.1f}kg). +0 XP."
+                color = ft.Colors.AMBER
 
-            # Mise à jour des données
-            self.data["muscles"][muscle]["xp"] += xp_gained
-            
-            # Mettre à jour le 1RM max du muscle si battu
-            if current_1rm > self.data["muscles"][muscle]["best_1rm"]:
-                self.data["muscles"][muscle]["best_1rm"] = current_1rm
+            data["muscles"][m]["xp"] += xp
+            if current_1rm > data["muscles"][m]["best_1rm"]:
+                data["muscles"][m]["best_1rm"] = current_1rm
 
-            # Enregistrer dans l'historique
-            self.data["history"].append({
-                "muscle": muscle,
-                "exercise": exercise,
+            data["history"].append({
+                "muscle": m,
+                "exercise": ex,
                 "sets": sets,
                 "reps": reps,
                 "weight": weight,
                 "est_1rm": current_1rm,
-                "xp_gained": xp_gained
+                "xp_gained": xp
             })
 
-            save_data(self.data)
-
-            # Affichage du feedback
-            color = "#00FF66" if xp_gained > 0 else "#FFCC00"
-            self.feedback_label.configure(text=msg, text_color=color)
-
-            # Rafraîchir l'IHM
-            self.refresh_muscle_display()
+            save_data(data)
+            feedback_text.value = msg
+            feedback_text.color = color
+            refresh_muscles()
 
         except ValueError:
-            messagebox.showerror("Erreur", "Saisissez des nombres valides pour Sets, Reps et Poids.")
+            feedback_text.value = "⚠️ Merci de remplir correctement les Sets, Reps et Poids."
+            feedback_text.color = ft.Colors.RED
+            page.update()
 
+    # Layout Mobile / Web
+    page.add(
+        ft.Text("🏆 GYM RPG RANKER", size=22, weight=ft.FontWeight.BOLD),
+        ft.Row([weight_input, height_input]),
+        ft.ElevatedButton("Mettre à jour le profil", on_click=update_profile),
+        ft.Divider(),
+        ft.Text("🏋️ Enregistrer un entraînement", size=18, weight=ft.FontWeight.BOLD),
+        muscle_dropdown,
+        exercise_input,
+        ft.Row([sets_input, reps_input, load_input]),
+        ft.ElevatedButton("Valider le Workout 🔥", on_click=log_workout),
+        feedback_text,
+        ft.Divider(),
+        ft.Text("💪 Niveau des Muscles", size=18, weight=ft.FontWeight.BOLD),
+        muscle_list_view
+    )
+
+    refresh_muscles()
+
+# Lancement du serveur Web Render
 if __name__ == "__main__":
-    app = GymRPGApp()
-    app.mainloop()
+    port = int(os.environ.get("PORT", 8080))
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)
