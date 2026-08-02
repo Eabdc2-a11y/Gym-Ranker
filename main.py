@@ -1,30 +1,4 @@
-import json
-import os
-import customtkinter as ctk
-from tkinter import messagebox
 
-# Configuration du thème CustomTkinter
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
-
-# --- CONSTANTES & RANKS ---
-RANKS = [
-    {"name": "Bronze", "color": "#CD7F32", "ratio": 0.0},
-    {"name": "Silver", "color": "#C0C0C0", "ratio": 0.8},
-    {"name": "Gold", "color": "#FFD700", "ratio": 1.1},
-    {"name": "Platinum", "color": "#00ECEC", "ratio": 1.4},
-    {"name": "Diamond", "color": "#B9F2FF", "ratio": 1.7},
-    {"name": "Master", "color": "#A020F0", "ratio": 2.0},
-    {"name": "GODLIKE ⚡", "color": "#FF003C", "ratio": 2.3}  # Rang Mythique Ultra Dur
-]
-
-MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Biceps", "Triceps"]
-
-DB_FILE = "gym_rpg_data.json"
-
-# --- LOGIQUE DE CALCUL DE BASE ---
-def get_default_data():
-    return {
         "user_info": {"weight": 75.0, "height": 175.0},
         "muscles": {m: {"xp": 0, "best_1rm": 0.0} for m in MUSCLES},
         "history": []
